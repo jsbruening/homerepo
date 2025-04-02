@@ -1,10 +1,8 @@
 export interface House {
   id: string;
   name: string;
-  owners: string[];
-  address?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface HouseContextType {

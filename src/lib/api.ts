@@ -1,5 +1,18 @@
 import { supabase } from './supabase';
 import { PaintRecord, HomeService, Plant, Reminder, House, PaintManufacturer, ServiceType, Recurrence, Location } from '../types';
+import { Database } from '../types/database.types';
+
+type Tables = Database['public']['Tables'];
+type PaintRecordRow = Tables['paint_records']['Row'];
+type HomeServiceRow = Tables['home_services']['Row'];
+type PlantRow = Tables['plants']['Row'];
+type ReminderRow = Tables['reminders']['Row'];
+type DbHouse = {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
 
 // Paint Records API
 export async function getLocations(houseId: string): Promise<Location[]> {
@@ -20,14 +33,40 @@ export async function getLocations(houseId: string): Promise<Location[]> {
   }));
 }
 
+interface SupabasePaintManufacturer {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface SupabaseServiceType {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface SupabaseHouse {
+  id: string;
+  name: string;
+  owners: string[];
+  address: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export async function getPaintManufacturers(): Promise<PaintManufacturer[]> {
   const { data, error } = await supabase
     .from('paint_manufacturers')
-    .select('*')
+    .select('id, name, description, created_at, updated_at')
     .order('name');
 
   if (error) throw error;
-  return data.map(manufacturer => ({
+  return (data || []).map((manufacturer) => ({
     id: manufacturer.id,
     name: manufacturer.name,
     description: manufacturer.description,
@@ -36,14 +75,14 @@ export async function getPaintManufacturers(): Promise<PaintManufacturer[]> {
   }));
 }
 
-export const getServiceTypes = async (): Promise<ServiceType[]> => {
+export async function getServiceTypes(): Promise<ServiceType[]> {
   const { data, error } = await supabase
     .from('service_types')
-    .select('*')
+    .select('id, name, description, category, created_at, updated_at')
     .order('name');
 
-  if (error) throw new Error(error.message);
-  return (data || []).map(type => ({
+  if (error) throw error;
+  return (data || []).map((type) => ({
     id: type.id,
     name: type.name,
     description: type.description,
@@ -51,7 +90,7 @@ export const getServiceTypes = async (): Promise<ServiceType[]> => {
     createdAt: type.created_at,
     updatedAt: type.updated_at
   }));
-};
+}
 
 interface SupabasePaintRecord {
   id: string;
@@ -159,7 +198,7 @@ export async function getPaintRecords(houseId: string): Promise<PaintRecord[]> {
 }
 
 export async function createPaintRecord(record: Omit<PaintRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<PaintRecord> {
-  // First, verify that the location exists and get its name
+  // Validate location exists
   const { data: location, error: locationError } = await supabase
     .from('locations')
     .select('id, name')
@@ -170,46 +209,33 @@ export async function createPaintRecord(record: Omit<PaintRecord, 'id' | 'create
     throw new Error('Invalid location selected');
   }
 
-  // Create a room if it doesn't exist
-  const { data: room, error: roomError } = await supabase
-    .from('rooms')
-    .insert({
-      name: location.name,
-      house_id: record.houseId
-    })
-    .select('id')
-    .single();
-
-  if (roomError) {
-    console.error('Error creating room:', roomError);
-    throw new Error('Failed to create room');
-  }
-
+  // Create paint record
   const { data, error } = await supabase
     .from('paint_records')
-    .insert({
-      house_id: record.houseId,
+    .insert([{
       manufacturer_id: record.manufacturerId,
       location_id: record.locationId,
-      room_id: room.id, // Use the newly created room's ID
       color_name: record.color,
-      color_code: record.color, // Using color as color_code for now
       paint_type: record.paintType,
       finish_type: record.finishType,
       painted_at: record.date,
-      notes: record.notes
-    })
+      notes: record.notes,
+      house_id: record.houseId,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }])
     .select(`
       id,
       manufacturer_id,
-      manufacturer:paint_manufacturers!manufacturer_id (
+      manufacturer:manufacturer_id (
         id,
         name,
+        description,
         created_at,
         updated_at
       ),
       location_id,
-      location:locations!location_id (
+      location:location_id (
         id,
         name,
         description,
@@ -218,7 +244,6 @@ export async function createPaintRecord(record: Omit<PaintRecord, 'id' | 'create
         updated_at
       ),
       color_name,
-      color_code,
       paint_type,
       finish_type,
       painted_at,
@@ -234,34 +259,33 @@ export async function createPaintRecord(record: Omit<PaintRecord, 'id' | 'create
     throw error;
   }
 
-  const response = data as unknown as SupabasePaintRecord;
   return {
-    id: response.id,
-    manufacturerId: response.manufacturer_id,
-    manufacturer: response.manufacturer ? {
-      id: response.manufacturer.id,
-      name: response.manufacturer.name,
-      description: null,
-      createdAt: response.manufacturer.created_at,
-      updatedAt: response.manufacturer.updated_at
+    id: data.id,
+    manufacturerId: data.manufacturer_id,
+    manufacturer: data.manufacturer ? {
+      id: data.manufacturer.id,
+      name: data.manufacturer.name,
+      description: data.manufacturer.description,
+      createdAt: data.manufacturer.created_at,
+      updatedAt: data.manufacturer.updated_at
     } : null,
-    locationId: response.location_id,
-    location: response.location ? {
-      id: response.location.id,
-      name: response.location.name,
-      description: response.location.description,
-      houseId: response.location.house_id,
-      createdAt: response.location.created_at,
-      updatedAt: response.location.updated_at
+    locationId: data.location_id,
+    location: data.location ? {
+      id: data.location.id,
+      name: data.location.name,
+      description: data.location.description,
+      houseId: data.location.house_id,
+      createdAt: data.location.created_at,
+      updatedAt: data.location.updated_at
     } : null,
-    color: response.color_name,
-    paintType: response.paint_type,
-    finishType: response.finish_type,
-    date: response.painted_at,
-    notes: response.notes,
-    houseId: response.house_id,
-    createdAt: response.created_at,
-    updatedAt: response.updated_at
+    color: data.color_name,
+    paintType: data.paint_type,
+    finishType: data.finish_type,
+    date: data.painted_at,
+    notes: data.notes,
+    houseId: data.house_id,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at
   };
 }
 
@@ -846,14 +870,17 @@ export const deleteReminder = async (id: string): Promise<void> => {
 export async function getHouses(): Promise<House[]> {
   const { data, error } = await supabase
     .from('houses')
-    .select('*')
-    .order('name', { ascending: true });
+    .select('id, name, owners, address, created_at, updated_at');
 
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return data || [];
+  if (error) throw error;
+  return (data || []).map((house) => ({
+    id: house.id,
+    name: house.name,
+    owners: house.owners,
+    address: house.address,
+    createdAt: house.created_at,
+    updatedAt: house.updated_at
+  }));
 }
 
 export async function createHouse(house: Omit<House, 'id' | 'createdAt' | 'updatedAt'>): Promise<House> {
@@ -861,36 +888,55 @@ export async function createHouse(house: Omit<House, 'id' | 'createdAt' | 'updat
     .from('houses')
     .insert([{
       name: house.name,
+      owners: house.owners,
       address: house.address,
-      owners: house.owners
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     }])
     .select()
     .single();
 
   if (error) {
-    throw new Error(error.message);
+    console.error('Error creating house:', error);
+    throw error;
   }
 
-  return data;
+  return {
+    id: data.id,
+    name: data.name,
+    owners: data.owners,
+    address: data.address,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at
+  };
 }
 
 export async function updateHouse(id: string, house: Partial<House>): Promise<House> {
   const { data, error } = await supabase
     .from('houses')
     .update({
-      name: house.name,
-      address: house.address,
-      owners: house.owners
+      ...(house.name && { name: house.name }),
+      ...(house.owners && { owners: house.owners }),
+      ...(house.address && { address: house.address }),
+      updated_at: new Date().toISOString()
     })
     .eq('id', id)
     .select()
     .single();
 
   if (error) {
-    throw new Error(error.message);
+    console.error('Error updating house:', error);
+    throw error;
   }
 
-  return data;
+  return {
+    id: data.id,
+    name: data.name,
+    owners: data.owners,
+    address: data.address,
+    createdAt: data.created_at,
+    updatedAt: data.updated_at
+  };
 }
 
 export async function deleteHouse(id: string): Promise<void> {
