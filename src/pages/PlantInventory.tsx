@@ -1,28 +1,30 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getPlants, createPlant, updatePlant, deletePlant, getRooms } from '../lib/api';
-import { Plant, Room } from '../types';
+import { getPlants, createPlant, updatePlant, deletePlant, getLocations } from '../lib/api';
+import { Plant, Location } from '../types';
 import { useHouse } from '../contexts/HouseContext';
 import { HomeModernIcon, PlusIcon } from '@heroicons/react/24/outline';
-import { PlantForm } from '../components/plants/PlantForm';
+import PlantForm from '../components/plants/PlantForm';
 import Modal from '../components/Modal';
 import ConfirmationDialog from '../components/ConfirmationDialog';
+import { useLocation } from 'react-router-dom';
 
 export default function PlantInventory() {
  const { currentHouse } = useHouse();
  const queryClient = useQueryClient();
+ const location = useLocation();
  const [isModalOpen, setIsModalOpen] = useState(false);
  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
  const [currentPlant, setCurrentPlant] = useState<Plant | undefined>(undefined);
 
- const { data: rooms = [] } = useQuery({
-  queryKey: ['rooms', currentHouse?.id],
-  queryFn: () => getRooms(currentHouse?.id || ''),
-  enabled: !!currentHouse?.id
+ const { data: locations = [] } = useQuery({
+  queryKey: ['locations', currentHouse?.id],
+  queryFn: () => currentHouse ? getLocations(currentHouse.id) : Promise.resolve([]),
+  enabled: !!currentHouse
  });
 
- const roomMap = rooms.reduce((acc, room) => {
-  acc[room.id] = room.name;
+ const locationMap = locations.reduce((acc, location) => {
+  acc[location.id] = location.name;
   return acc;
  }, {} as Record<string, string>);
 
@@ -59,6 +61,18 @@ export default function PlantInventory() {
    setIsDeleteDialogOpen(false);
   }
  });
+
+ // Handle editId from navigation state
+ useEffect(() => {
+  const state = location.state as { editId?: string } | null;
+  if (state?.editId && plants.length > 0) {
+   const plant = plants.find(p => p.id === state.editId);
+   if (plant) {
+    setCurrentPlant(plant);
+    setIsModalOpen(true);
+   }
+  }
+ }, [location.state, plants]);
 
  if (!currentHouse) {
   return (
@@ -168,7 +182,7 @@ export default function PlantInventory() {
              {plant.name}
             </td>
             <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-             {roomMap[plant.roomId] || 'Unknown Room'}
+             {locationMap[plant.locationId] || 'Unknown Location'}
             </td>
             <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{plant.sunRequirements}</td>
             <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
@@ -228,7 +242,7 @@ export default function PlantInventory() {
              {plant.name}
             </td>
             <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-             {plant.type === 'outdoor' ? 'Outdoor' : roomMap[plant.roomId] || 'Unknown Room'}
+             {plant.type === 'outdoor' ? 'Outdoor' : locationMap[plant.locationId] || 'Unknown Location'}
             </td>
             <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{plant.sunRequirements}</td>
             <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">

@@ -16,15 +16,20 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <Router>
         <HouseProvider>
-          <Navigation>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/paint-records" element={<PaintRecords />} />
-              <Route path="/home-services" element={<HomeServices />} />
-              <Route path="/plant-inventory" element={<PlantInventory />} />
-              <Route path="/house-reminders" element={<HouseReminders />} />
-            </Routes>
-          </Navigation>
+          <div className="flex h-screen">
+            <Navigation />
+            <main className="flex-1 overflow-auto">
+              <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 py-6">
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/paint-records" element={<PaintRecords />} />
+                  <Route path="/home-services" element={<HomeServices />} />
+                  <Route path="/plant-inventory" element={<PlantInventory />} />
+                  <Route path="/house-reminders" element={<HouseReminders />} />
+                </Routes>
+              </div>
+            </main>
+          </div>
         </HouseProvider>
       </Router>
     </QueryClientProvider>

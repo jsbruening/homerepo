@@ -1,4 +1,4 @@
-export interface Room {
+export interface Location {
   id: string;
   name: string;
   description: string | null;
@@ -35,12 +35,13 @@ export interface Recurrence {
 
 export interface PaintRecord {
   id: string;
-  manufacturer: PaintManufacturer;
-  room: Room;
+  manufacturerId: string;
+  manufacturer: PaintManufacturer | null;
+  locationId: string;
+  location: Location | null;
   color: string;
-  finish: string;
-  paint_type: string;
-  finish_type: string;
+  paintType: string;
+  finishType: string;
   date: string;
   notes: string | null;
   houseId: string;
@@ -64,7 +65,7 @@ export interface HomeService {
 export interface Plant {
   id: string;
   name: string;
-  roomId: string;
+  locationId: string;
   type: 'indoor' | 'outdoor';
   sunRequirements: 'no sun' | 'partial shade' | 'full sun';
   maxHeight: number;

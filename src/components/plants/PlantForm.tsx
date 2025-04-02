@@ -5,13 +5,13 @@ import { FormInput } from '../FormInput';
 import { FormSelect } from '../FormSelect';
 import { FormTextarea } from '../FormTextarea';
 import FormLayout from '../FormLayout';
-import { Plant, Room } from '../../types';
-import { getPlantTypes, getSunRequirements, getRooms, createPlant, updatePlant } from '../../lib/api';
+import { Plant } from '../../types';
+import { getPlantTypes, getSunRequirements, getLocations, createPlant, updatePlant } from '../../lib/api';
 import { useHouse } from '../../contexts/HouseContext';
 
 interface FormData {
  name: string;
- roomId: string;
+ locationId: string;
  type: 'indoor' | 'outdoor';
  sunRequirements: 'no sun' | 'partial shade' | 'full sun';
  maxHeight: number;
@@ -21,92 +21,66 @@ interface FormData {
 
 interface PlantFormProps {
  initialData?: Plant;
- onSubmit: (data: Omit<Plant, 'id' | 'createdAt' | 'updatedAt'>) => void;
+ onSubmit: (data: Omit<Plant, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
  onCancel: () => void;
  isSubmitting?: boolean;
 }
 
-export function PlantForm({ initialData, onSubmit, onCancel, isSubmitting = false }: PlantFormProps) {
+export default function PlantForm({
+ initialData,
+ onSubmit,
+ onCancel,
+ isSubmitting = false
+}: PlantFormProps) {
  const { currentHouse } = useHouse();
  const [error, setError] = useState<string | null>(null);
 
- const { data: typeOptions = [], isLoading: isLoadingTypes } = useQuery({
-  queryKey: ['plantTypes'],
-  queryFn: getPlantTypes
+ const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+  defaultValues: initialData ? {
+   name: initialData.name,
+   locationId: initialData.locationId,
+   type: initialData.type,
+   sunRequirements: initialData.sunRequirements,
+   maxHeight: initialData.maxHeight,
+   maxWidth: initialData.maxWidth,
+   notes: initialData.notes || ''
+  } : undefined
  });
 
- const { data: sunRequirementOptions = [], isLoading: isLoadingSunRequirements } = useQuery({
-  queryKey: ['sunRequirements'],
-  queryFn: getSunRequirements
+ const { data: locations = [] } = useQuery({
+  queryKey: ['locations', currentHouse?.id],
+  queryFn: () => currentHouse ? getLocations(currentHouse.id) : Promise.resolve([]),
+  enabled: !!currentHouse
  });
 
- const { data: rooms = [], isLoading: isLoadingRooms } = useQuery({
-  queryKey: ['rooms', currentHouse?.id],
-  queryFn: () => getRooms(currentHouse?.id || ''),
-  enabled: !!currentHouse?.id
- });
-
- const roomOptions = rooms.map(room => ({
-  value: room.id,
-  label: room.name
+ const locationOptions = locations.map(location => ({
+  value: location.id,
+  label: location.name
  }));
-
- const { register, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
-  defaultValues: {
-   name: initialData?.name || '',
-   roomId: initialData?.roomId || '',
-   type: initialData?.type || 'indoor',
-   sunRequirements: initialData?.sunRequirements || 'partial shade',
-   maxHeight: initialData?.maxHeight || 0,
-   maxWidth: initialData?.maxWidth || 0,
-   notes: initialData?.notes || ''
-  }
- });
-
- const formValues = watch();
 
  const onValid = async (data: FormData) => {
   try {
-   const formattedData: Omit<Plant, 'id' | 'createdAt' | 'updatedAt'> = {
+   await onSubmit({
     name: data.name,
+    locationId: data.locationId,
     type: data.type,
     sunRequirements: data.sunRequirements,
     maxHeight: data.maxHeight,
     maxWidth: data.maxWidth,
     notes: data.notes || null,
-    roomId: data.type === 'indoor' ? data.roomId : '',
     houseId: currentHouse?.id || ''
-   };
-
-   if (initialData) {
-    await updatePlant(initialData.id, formattedData);
-   } else {
-    await createPlant(formattedData, currentHouse?.id || '');
-   }
-   onSubmit(formattedData);
+   });
   } catch (error) {
    console.error('Error saving plant:', error);
    setError('Failed to save plant. Please try again.');
   }
  };
 
- const onInvalid = (errors: any) => {
-  console.error('Validation errors:', errors);
-  setError('Please fix the validation errors and try again.');
- };
-
- const handleFormSubmit = handleSubmit(onValid, onInvalid);
-
- const onSubmitForm = (e: React.FormEvent) => {
-  e.preventDefault();
-  handleFormSubmit(e as unknown as React.BaseSyntheticEvent);
- };
-
  return (
   <FormLayout
-   title={initialData?.id ? 'Edit Plant' : 'Add Plant'}
-   description="Add a plant to your inventory"
-   onSubmit={onSubmitForm}
+   title={initialData ? 'Edit Plant' : 'Add Plant'}
+   description="Record the details of a plant in your home"
+   onSubmit={handleSubmit(onValid)}
    onCancel={onCancel}
    isSubmitting={isSubmitting}
   >
@@ -117,10 +91,17 @@ export function PlantForm({ initialData, onSubmit, onCancel, isSubmitting = fals
 
     <FormInput
      id="name"
-     label="Plant Name"
-     value={formValues.name}
+     label="Name"
      error={errors.name?.message}
-     {...register('name', { required: 'Plant name is required' })}
+     {...register('name', { required: 'Name is required' })}
+    />
+
+    <FormSelect
+     id="locationId"
+     label="Location"
+     options={locationOptions}
+     error={errors.locationId?.message}
+     {...register('locationId', { required: 'Location is required' })}
     />
 
     <FormSelect
@@ -130,25 +111,9 @@ export function PlantForm({ initialData, onSubmit, onCancel, isSubmitting = fals
       { value: 'indoor', label: 'Indoor' },
       { value: 'outdoor', label: 'Outdoor' }
      ]}
-     value={formValues.type}
      error={errors.type?.message}
-     disabled={isLoadingTypes}
      {...register('type', { required: 'Type is required' })}
     />
-
-    {formValues.type === 'indoor' && (
-     <FormSelect
-      id="roomId"
-      label="Room"
-      options={roomOptions}
-      value={formValues.roomId}
-      error={errors.roomId?.message}
-      disabled={isLoadingRooms}
-      {...register('roomId', {
-       required: formValues.type === 'indoor' ? 'Room is required for indoor plants' : false
-      })}
-     />
-    )}
 
     <FormSelect
      id="sunRequirements"
@@ -158,33 +123,25 @@ export function PlantForm({ initialData, onSubmit, onCancel, isSubmitting = fals
       { value: 'partial shade', label: 'Partial Shade' },
       { value: 'full sun', label: 'Full Sun' }
      ]}
-     value={formValues.sunRequirements}
      error={errors.sunRequirements?.message}
-     disabled={isLoadingSunRequirements}
-     {...register('sunRequirements', { required: 'Sun requirements is required' })}
+     {...register('sunRequirements', { required: 'Sun requirements are required' })}
     />
 
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-     <FormInput
-      id="maxHeight"
-      label="Max Height (ft)"
-      type="number"
-      step="0.1"
-      min="0"
-      error={errors.maxHeight?.message}
-      {...register('maxHeight', { required: 'Max height is required', min: 0 })}
-     />
+    <FormInput
+     id="maxHeight"
+     label="Maximum Height (inches)"
+     type="number"
+     error={errors.maxHeight?.message}
+     {...register('maxHeight', { required: 'Maximum height is required' })}
+    />
 
-     <FormInput
-      id="maxWidth"
-      label="Max Width (ft)"
-      type="number"
-      step="0.1"
-      min="0"
-      error={errors.maxWidth?.message}
-      {...register('maxWidth', { required: 'Max width is required', min: 0 })}
-     />
-    </div>
+    <FormInput
+     id="maxWidth"
+     label="Maximum Width (inches)"
+     type="number"
+     error={errors.maxWidth?.message}
+     {...register('maxWidth', { required: 'Maximum width is required' })}
+    />
 
     <FormTextarea
      id="notes"

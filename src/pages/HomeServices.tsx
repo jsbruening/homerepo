@@ -1,20 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getHomeServices, createHomeService, updateHomeService, deleteHomeService } from '../lib/api';
-import { HomeService } from '../types';
+import { getHomeServices, createHomeService, updateHomeService, deleteHomeService, getServiceTypes } from '../lib/api';
+import { HomeService, ServiceType } from '../types';
 import { useHouse } from '../contexts/HouseContext';
 import { HomeModernIcon, PlusIcon } from '@heroicons/react/24/outline';
 import HomeServiceForm from '../components/services/HomeServiceForm';
 import Modal from '../components/Modal';
 import ConfirmationDialog from '../components/ConfirmationDialog';
+import { useLocation } from 'react-router-dom';
 
 export default function HomeServices() {
   const { currentHouse } = useHouse();
   const queryClient = useQueryClient();
+  const location = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [currentService, setCurrentService] = useState<Partial<HomeService> | undefined>(undefined);
+  const [currentService, setCurrentService] = useState<HomeService | undefined>(undefined);
 
   const { data: services = [], isLoading } = useQuery({
     queryKey: ['homeServices', currentHouse?.id],
@@ -50,6 +52,18 @@ export default function HomeServices() {
       setIsDeleteDialogOpen(false);
     }
   });
+
+  // Handle editId from navigation state
+  useEffect(() => {
+    const state = location.state as { editId?: string } | null;
+    if (state?.editId && services.length > 0) {
+      const service = services.find(s => s.id === state.editId);
+      if (service) {
+        setCurrentService(service);
+        setIsModalOpen(true);
+      }
+    }
+  }, [location.state, services]);
 
   if (!currentHouse) {
     return (

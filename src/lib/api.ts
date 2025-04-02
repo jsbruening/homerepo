@@ -1,22 +1,22 @@
 import { supabase } from './supabase';
-import { PaintRecord, HomeService, Plant, Reminder, Room, House, PaintManufacturer, ServiceType, Recurrence } from '../types';
+import { PaintRecord, HomeService, Plant, Reminder, House, PaintManufacturer, ServiceType, Recurrence, Location } from '../types';
 
 // Paint Records API
-export async function getRooms(houseId: string): Promise<Room[]> {
+export async function getLocations(houseId: string): Promise<Location[]> {
   const { data, error } = await supabase
-    .from('rooms')
+    .from('locations')
     .select('*')
     .eq('house_id', houseId)
     .order('name');
 
   if (error) throw error;
-  return data.map(room => ({
-    id: room.id,
-    name: room.name,
-    description: room.description,
-    houseId: room.house_id,
-    createdAt: room.created_at,
-    updatedAt: room.updated_at
+  return data.map(location => ({
+    id: location.id,
+    name: location.name,
+    description: location.description,
+    houseId: location.house_id,
+    createdAt: location.created_at,
+    updatedAt: location.updated_at
   }));
 }
 
@@ -53,72 +53,179 @@ export const getServiceTypes = async (): Promise<ServiceType[]> => {
   }));
 };
 
+interface SupabasePaintRecord {
+  id: string;
+  manufacturer_id: string;
+  manufacturer: {
+    id: string;
+    name: string;
+    created_at: string;
+    updated_at: string;
+  } | null;
+  location_id: string;
+  location: {
+    id: string;
+    name: string;
+    description: string | null;
+    house_id: string;
+    created_at: string;
+    updated_at: string;
+  } | null;
+  color_name: string;
+  color_code: string;
+  paint_type: string;
+  finish_type: string;
+  painted_at: string;
+  notes: string | null;
+  house_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export async function getPaintRecords(houseId: string): Promise<PaintRecord[]> {
+  console.log('Fetching paint records for house:', houseId);
+  
   const { data, error } = await supabase
     .from('paint_records')
     .select(`
-      *,
-      manufacturer:paint_manufacturers!manufacturer_id(*)
+      id,
+      manufacturer_id,
+      manufacturer:paint_manufacturers!manufacturer_id (
+        id,
+        name,
+        created_at,
+        updated_at
+      ),
+      location_id,
+      location:locations!location_id (
+        id,
+        name,
+        description,
+        house_id,
+        created_at,
+        updated_at
+      ),
+      color_name,
+      color_code,
+      paint_type,
+      finish_type,
+      painted_at,
+      notes,
+      house_id,
+      created_at,
+      updated_at
     `)
     .eq('house_id', houseId)
     .order('painted_at', { ascending: false });
 
-  if (error) throw error;
-  return data.map(record => ({
+  if (error) {
+    console.error('Error fetching paint records:', error);
+    throw error;
+  }
+
+  console.log('Raw paint records data:', JSON.stringify(data, null, 2));
+
+  const mappedRecords = ((data || []) as unknown as SupabasePaintRecord[]).map(record => ({
     id: record.id,
-    manufacturer: {
+    manufacturerId: record.manufacturer_id,
+    manufacturer: record.manufacturer ? {
       id: record.manufacturer.id,
       name: record.manufacturer.name,
-      description: record.manufacturer.description,
+      description: null,
       createdAt: record.manufacturer.created_at,
       updatedAt: record.manufacturer.updated_at
-    },
-    room: record.paint_type === 'exterior' ? {
-      id: '',
-      name: record.location || '',
-      description: '',
-      houseId: record.house_id,
-      createdAt: record.created_at,
-      updatedAt: record.updated_at
-    } : {
-      id: record.room_id,
-      name: record.room?.name || '',
-      description: record.room?.description || '',
-      houseId: record.room?.house_id || '',
-      createdAt: record.room?.created_at || record.created_at,
-      updatedAt: record.room?.updated_at || record.updated_at
-    },
-    color: record.color_name,
-    finish: record.color_code,
-    paint_type: record.paint_type,
-    finish_type: record.finish_type,
+    } : null,
+    locationId: record.location_id,
+    location: record.location ? {
+      id: record.location.id,
+      name: record.location.name,
+      description: record.location.description,
+      houseId: record.location.house_id,
+      createdAt: record.location.created_at,
+      updatedAt: record.location.updated_at
+    } : null,
+    color: record.color_name || record.color_code,
+    paintType: record.paint_type,
+    finishType: record.finish_type,
     date: record.painted_at,
     notes: record.notes,
     houseId: record.house_id,
     createdAt: record.created_at,
     updatedAt: record.updated_at
   }));
+
+  console.log('Mapped paint records:', JSON.stringify(mappedRecords, null, 2));
+  return mappedRecords;
 }
 
-export async function createPaintRecord(record: Omit<PaintRecord, 'id' | 'createdAt' | 'updatedAt'>, houseId: string): Promise<PaintRecord> {
+export async function createPaintRecord(record: Omit<PaintRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<PaintRecord> {
+  // First, verify that the location exists and get its name
+  const { data: location, error: locationError } = await supabase
+    .from('locations')
+    .select('id, name')
+    .eq('id', record.locationId)
+    .single();
+
+  if (locationError || !location) {
+    throw new Error('Invalid location selected');
+  }
+
+  // Create a room if it doesn't exist
+  const { data: room, error: roomError } = await supabase
+    .from('rooms')
+    .insert({
+      name: location.name,
+      house_id: record.houseId
+    })
+    .select('id')
+    .single();
+
+  if (roomError) {
+    console.error('Error creating room:', roomError);
+    throw new Error('Failed to create room');
+  }
+
   const { data, error } = await supabase
     .from('paint_records')
     .insert({
-      manufacturer_id: record.manufacturer.id,
-      room_id: record.paint_type === 'exterior' ? null : record.room.id,
-      location: record.paint_type === 'exterior' ? record.room.name : null,
+      house_id: record.houseId,
+      manufacturer_id: record.manufacturerId,
+      location_id: record.locationId,
+      room_id: room.id, // Use the newly created room's ID
       color_name: record.color,
-      color_code: record.finish,
-      paint_type: record.paint_type,
-      finish_type: record.finish_type,
+      color_code: record.color, // Using color as color_code for now
+      paint_type: record.paintType,
+      finish_type: record.finishType,
       painted_at: record.date,
-      notes: record.notes,
-      house_id: houseId
+      notes: record.notes
     })
     .select(`
-      *,
-      manufacturer:paint_manufacturers(*),
-      room:rooms(*)
+      id,
+      manufacturer_id,
+      manufacturer:paint_manufacturers!manufacturer_id (
+        id,
+        name,
+        created_at,
+        updated_at
+      ),
+      location_id,
+      location:locations!location_id (
+        id,
+        name,
+        description,
+        house_id,
+        created_at,
+        updated_at
+      ),
+      color_name,
+      color_code,
+      paint_type,
+      finish_type,
+      painted_at,
+      notes,
+      house_id,
+      created_at,
+      updated_at
     `)
     .single();
 
@@ -127,70 +234,79 @@ export async function createPaintRecord(record: Omit<PaintRecord, 'id' | 'create
     throw error;
   }
 
+  const response = data as unknown as SupabasePaintRecord;
   return {
-    id: data.id,
-    manufacturer: {
-      id: data.manufacturer.id,
-      name: data.manufacturer.name,
-      description: data.manufacturer.description,
-      createdAt: data.manufacturer.created_at,
-      updatedAt: data.manufacturer.updated_at
-    },
-    room: data.room ? {
-      id: data.room.id,
-      name: data.room.name,
-      description: data.room.description,
-      houseId: data.room.house_id,
-      createdAt: data.room.created_at,
-      updatedAt: data.room.updated_at
-    } : {
-      id: '',
-      name: data.location || '',
-      description: '',
-      houseId: '',
-      createdAt: data.created_at,
-      updatedAt: data.updated_at
-    },
-    color: data.color_name,
-    finish: data.color_code,
-    paint_type: data.paint_type,
-    finish_type: data.finish_type,
-    date: data.painted_at,
-    notes: data.notes,
-    houseId: data.house_id,
-    createdAt: data.created_at,
-    updatedAt: data.updated_at
+    id: response.id,
+    manufacturerId: response.manufacturer_id,
+    manufacturer: response.manufacturer ? {
+      id: response.manufacturer.id,
+      name: response.manufacturer.name,
+      description: null,
+      createdAt: response.manufacturer.created_at,
+      updatedAt: response.manufacturer.updated_at
+    } : null,
+    locationId: response.location_id,
+    location: response.location ? {
+      id: response.location.id,
+      name: response.location.name,
+      description: response.location.description,
+      houseId: response.location.house_id,
+      createdAt: response.location.created_at,
+      updatedAt: response.location.updated_at
+    } : null,
+    color: response.color_name,
+    paintType: response.paint_type,
+    finishType: response.finish_type,
+    date: response.painted_at,
+    notes: response.notes,
+    houseId: response.house_id,
+    createdAt: response.created_at,
+    updatedAt: response.updated_at
   };
 }
 
-export async function updatePaintRecord(id: string, record: Partial<PaintRecord>): Promise<PaintRecord> {
-  const updateData: any = {
-    manufacturer_id: record.manufacturer?.id,
-    color_name: record.color,
-    color_code: record.finish,
-    paint_type: record.paint_type,
-    finish_type: record.finish_type,
-    painted_at: record.date,
-    notes: record.notes,
-    house_id: record.houseId
-  };
-
-  // Handle room data based on paint type
-  if (record.paint_type === 'exterior') {
-    updateData.room_id = null;
-    updateData.location = record.room?.name;
-  } else if (record.room?.id) {
-    updateData.room_id = record.room.id;
-    updateData.location = null;
-  }
-
+export async function updatePaintRecord(record: PaintRecord): Promise<PaintRecord> {
   const { data, error } = await supabase
     .from('paint_records')
-    .update(updateData)
-    .eq('id', id)
+    .update({
+      manufacturer_id: record.manufacturerId,
+      location_id: record.locationId,
+      room_id: record.locationId, // Using locationId as room_id since they are the same
+      color_name: record.color,
+      color_code: record.color, // Using color as color_code for now
+      paint_type: record.paintType,
+      finish_type: record.finishType,
+      painted_at: record.date, // Ensure date is properly set
+      notes: record.notes
+    })
+    .eq('id', record.id)
     .select(`
-      *,
-      manufacturer:paint_manufacturers!manufacturer_id(*)
+      id,
+      manufacturer_id,
+      manufacturer:paint_manufacturers!manufacturer_id (
+        id,
+        name,
+        created_at,
+        updated_at
+      ),
+      location_id,
+      location:locations!location_id (
+        id,
+        name,
+        description,
+        house_id,
+        created_at,
+        updated_at
+      ),
+      color_name,
+      color_code,
+      paint_type,
+      finish_type,
+      painted_at,
+      notes,
+      house_id,
+      created_at,
+      updated_at
     `)
     .single();
 
@@ -201,32 +317,26 @@ export async function updatePaintRecord(id: string, record: Partial<PaintRecord>
 
   return {
     id: data.id,
-    manufacturer: {
+    manufacturerId: data.manufacturer_id,
+    manufacturer: data.manufacturer ? {
       id: data.manufacturer.id,
       name: data.manufacturer.name,
-      description: data.manufacturer.description,
+      description: null,
       createdAt: data.manufacturer.created_at,
       updatedAt: data.manufacturer.updated_at
-    },
-    room: data.paint_type === 'exterior' ? {
-      id: '',
-      name: data.location || '',
-      description: '',
-      houseId: data.house_id,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at
-    } : {
-      id: data.room_id,
-      name: data.room?.name || '',
-      description: data.room?.description || '',
-      houseId: data.room?.house_id || '',
-      createdAt: data.room?.created_at || data.created_at,
-      updatedAt: data.room?.updated_at || data.updated_at
-    },
-    color: data.color_name,
-    finish: data.color_code,
-    paint_type: data.paint_type,
-    finish_type: data.finish_type,
+    } : null,
+    locationId: data.location_id,
+    location: data.location ? {
+      id: data.location.id,
+      name: data.location.name,
+      description: data.location.description,
+      houseId: data.location.house_id,
+      createdAt: data.location.created_at,
+      updatedAt: data.location.updated_at
+    } : null,
+    color: data.color_name || data.color_code,
+    paintType: data.paint_type,
+    finishType: data.finish_type,
     date: data.painted_at,
     notes: data.notes,
     houseId: data.house_id,
@@ -458,13 +568,11 @@ export async function getPlants(houseId: string): Promise<Plant[]> {
   return data.map(plant => ({
     id: plant.id,
     name: plant.name,
-    roomId: plant.location,
+    locationId: plant.location,
     type: plant.type,
     sunRequirements: plant.sun_requirements,
     maxHeight: plant.max_height,
     maxWidth: plant.max_width,
-    lastWatered: plant.last_watered,
-    nextWatering: plant.next_watering,
     notes: plant.notes,
     houseId: plant.house_id,
     createdAt: plant.created_at,
@@ -477,7 +585,7 @@ export async function createPlant(plant: Omit<Plant, 'id' | 'createdAt' | 'updat
     .from('plants')
     .insert({
       name: plant.name,
-      location: plant.roomId,
+      location: plant.locationId,
       type: plant.type,
       sun_requirements: plant.sunRequirements,
       max_height: plant.maxHeight,
@@ -496,7 +604,7 @@ export async function createPlant(plant: Omit<Plant, 'id' | 'createdAt' | 'updat
   return {
     id: data.id,
     name: data.name,
-    roomId: data.location,
+    locationId: data.location,
     type: data.type,
     sunRequirements: data.sun_requirements,
     maxHeight: data.max_height,
@@ -513,7 +621,7 @@ export async function updatePlant(id: string, plant: Partial<Plant>): Promise<Pl
     console.log('Updating plant with values:', {
       id,
       name: plant.name,
-      location: plant.roomId,
+      location: plant.locationId,
       type: plant.type,
       sun_requirements: plant.sunRequirements,
       max_height: plant.maxHeight,
@@ -526,7 +634,7 @@ export async function updatePlant(id: string, plant: Partial<Plant>): Promise<Pl
       .from('plants')
       .update({
         name: plant.name,
-        location: plant.roomId,
+        location: plant.locationId,
         type: plant.type,
         sun_requirements: plant.sunRequirements,
         max_height: plant.maxHeight,
@@ -546,13 +654,13 @@ export async function updatePlant(id: string, plant: Partial<Plant>): Promise<Pl
     return {
       id: data.id,
       name: data.name,
-      roomId: data.location,
+      locationId: data.location,
       type: data.type,
       sunRequirements: data.sun_requirements,
       maxHeight: data.max_height,
       maxWidth: data.max_width,
-      houseId: data.house_id,
       notes: data.notes,
+      houseId: data.house_id,
       createdAt: data.created_at,
       updatedAt: data.updated_at
     };
