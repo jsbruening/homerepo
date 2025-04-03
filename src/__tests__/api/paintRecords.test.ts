@@ -26,9 +26,22 @@ const mockLocation: Location = {
 const mockPaintRecord = {
   id: '1',
   manufacturerId: 'm1',
-  manufacturer: mockManufacturer,
+  manufacturer: {
+    id: 'm1',
+    name: 'Test Manufacturer',
+    description: null,
+    createdAt: '2024-03-01T00:00:00.000Z',
+    updatedAt: '2024-03-01T00:00:00.000Z'
+  },
   locationId: 'l1',
-  location: mockLocation,
+  location: {
+    id: 'l1',
+    name: 'Living Room',
+    description: 'Main living area',
+    houseId: 'h1',
+    createdAt: '2024-03-01T00:00:00.000Z',
+    updatedAt: '2024-03-01T00:00:00.000Z'
+  },
   color: 'Ocean Blue',
   paintType: 'Matte',
   finishType: 'Flat',
@@ -58,16 +71,20 @@ describe('Paint Records API', () => {
                 id: '1',
                 manufacturer_id: 'm1',
                 manufacturer: {
-                  ...mockManufacturer,
-                  created_at: mockManufacturer.createdAt,
-                  updated_at: mockManufacturer.updatedAt
+                  id: 'm1',
+                  name: 'Test Manufacturer',
+                  description: null,
+                  created_at: '2024-03-01T00:00:00.000Z',
+                  updated_at: '2024-03-01T00:00:00.000Z'
                 },
                 location_id: 'l1',
                 location: {
-                  ...mockLocation,
-                  created_at: mockLocation.createdAt,
-                  updated_at: mockLocation.updatedAt,
-                  house_id: mockLocation.houseId
+                  id: 'l1',
+                  name: 'Living Room',
+                  description: 'Main living area',
+                  house_id: 'h1',
+                  created_at: '2024-03-01T00:00:00.000Z',
+                  updated_at: '2024-03-01T00:00:00.000Z'
                 },
                 color_name: 'Ocean Blue',
                 paint_type: 'Matte',

@@ -98,9 +98,10 @@ interface SupabasePaintRecord {
   manufacturer: {
     id: string;
     name: string;
+    description: string | null;
     created_at: string;
     updated_at: string;
-  } | null;
+  };
   location_id: string;
   location: {
     id: string;
@@ -109,9 +110,8 @@ interface SupabasePaintRecord {
     house_id: string;
     created_at: string;
     updated_at: string;
-  } | null;
+  };
   color_name: string;
-  color_code: string;
   paint_type: string;
   finish_type: string;
   painted_at: string;
@@ -122,37 +122,25 @@ interface SupabasePaintRecord {
 }
 
 export async function getPaintRecords(houseId: string): Promise<PaintRecord[]> {
-  console.log('Fetching paint records for house:', houseId);
-  
   const { data, error } = await supabase
     .from('paint_records')
     .select(`
-      id,
-      manufacturer_id,
-      manufacturer:paint_manufacturers!manufacturer_id (
+      *,
+      manufacturer:manufacturer_id (
         id,
         name,
+        description,
         created_at,
         updated_at
       ),
-      location_id,
-      location:locations!location_id (
+      location:location_id (
         id,
         name,
         description,
         house_id,
         created_at,
         updated_at
-      ),
-      color_name,
-      color_code,
-      paint_type,
-      finish_type,
-      painted_at,
-      notes,
-      house_id,
-      created_at,
-      updated_at
+      )
     `)
     .eq('house_id', houseId)
     .order('painted_at', { ascending: false });
@@ -162,15 +150,17 @@ export async function getPaintRecords(houseId: string): Promise<PaintRecord[]> {
     throw error;
   }
 
-  console.log('Raw paint records data:', JSON.stringify(data, null, 2));
+  if (!data) {
+    throw new Error('Database error');
+  }
 
-  const mappedRecords = ((data || []) as unknown as SupabasePaintRecord[]).map(record => ({
+  return (data as SupabasePaintRecord[]).map(record => ({
     id: record.id,
     manufacturerId: record.manufacturer_id,
     manufacturer: record.manufacturer ? {
       id: record.manufacturer.id,
       name: record.manufacturer.name,
-      description: null,
+      description: record.manufacturer.description,
       createdAt: record.manufacturer.created_at,
       updatedAt: record.manufacturer.updated_at
     } : null,
@@ -183,7 +173,7 @@ export async function getPaintRecords(houseId: string): Promise<PaintRecord[]> {
       createdAt: record.location.created_at,
       updatedAt: record.location.updated_at
     } : null,
-    color: record.color_name || record.color_code,
+    color: record.color_name,
     paintType: record.paint_type,
     finishType: record.finish_type,
     date: record.painted_at,
@@ -192,9 +182,6 @@ export async function getPaintRecords(houseId: string): Promise<PaintRecord[]> {
     createdAt: record.created_at,
     updatedAt: record.updated_at
   }));
-
-  console.log('Mapped paint records:', JSON.stringify(mappedRecords, null, 2));
-  return mappedRecords;
 }
 
 export async function createPaintRecord(record: Omit<PaintRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<PaintRecord> {
